@@ -6,7 +6,7 @@ def main():
     c = Config(
         screen_dimensions=(1150, 500),
         ghost_speed=1,
-        pacman_speed=1,
+        pacman_speed=1.5,
         window_name="PacMan",
         board=BoardConfig(
             wall_color=(255, 255, 255),

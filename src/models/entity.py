@@ -1,4 +1,8 @@
 from __future__ import annotations
+
+import functools
+import math
+import random
 from typing import TYPE_CHECKING, TypeAlias, Literal
 from dataclasses import dataclass
 
@@ -12,6 +16,42 @@ from src.models.assets import fetch_surface
 from src.models.config import *
 
 _DIR_MAP: dict[Direction, Point] = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0), "none": (0, 0)}
+_ROT_MAP: dict[Direction, int] = {"up": 90, "down": -90, "left": 180, "right": 0, "none": 0}
+
+
+@functools.cache
+def mask_from_path(path: str, threshold: int = 127) -> pg.mask.Mask:
+    return pg.mask.from_surface(fetch_surface(path), threshold)
+
+
+class SimpleSprite:
+    def __init__(self, path: str, pos: Point):
+        self.x, self.y = pos
+        self.surface = fetch_surface(path)
+        self.mask = mask_from_path(path)
+
+    @classmethod
+    def scatter_at(cls, x_y: Point) -> SimpleSprite:
+        return cls(
+            global_config().board.scatter_path,
+            x_y
+        )
+
+    @classmethod
+    def point_at(cls, x_y: Point) -> SimpleSprite:
+        return cls(
+            global_config().board.point_path,
+            x_y
+        )
+
+    @property
+    def pos(self):
+        return self.x, self.y
+
+    def collides_with(self, other) -> bool:
+        offset_x = other.x - self.x
+        offset_y = other.y - self.y
+        return bool(self.mask.overlap_area(other.mask, (offset_x, offset_y)))
 
 
 class Entity:
@@ -24,11 +64,15 @@ class Entity:
                  is_ghost: bool = False):
         self.x, self.y = x, y
         self.speed = speed
-        self.surface = fetch_surface(surface_path)
+        self._surface_path = surface_path
         self._add_direction = add_direction
         self._is_ghost = is_ghost
+        self.direction: Direction = "none"
+        self.mask = pg.mask.from_surface(self.surface, 1)
 
-        self.mask = pg.mask.from_surface(self.surface)
+    @property
+    def surface(self):
+        return fetch_surface(self._surface_path)
 
     @property
     def pos(self) -> Point:
@@ -38,9 +82,14 @@ class Entity:
     def pos(self, value: Point):
         self.x, self.y = value
 
+    def change_speed(self, speed: int | float) -> None:
+        self.speed = speed
+        self.change_direction(self.direction)
+
     def change_direction(self, direction: Direction) -> None:
         add_x, add_y = _DIR_MAP[direction]
         self._add_direction = (self.speed * add_x, self.speed * add_y)
+        self.direction = direction
 
     def advance(self, *, reverse: bool = False) -> None:
         x, y = self._add_direction if not reverse else (-x for x in self._add_direction)
@@ -50,17 +99,32 @@ class Entity:
     def on_event(self, event: pg.event.Event) -> None:
         pass
 
+    def advance_if_able(self, board: Board, *, recur: int = 4) -> bool:
+        """
+
+        :param board:
+        :param recur:
+        :return: true if advancement made
+        """
+        self.advance()
+        r = self.mask.get_rect()
+        r.x, r.y = 0, 0
+        if collision := board.collides_with_wall(self.mask, (round(self.pos[0]), round(self.pos[1])), is_ghost=self._is_ghost):
+            self.advance(reverse=True)
+            if recur:
+                speed = self.speed
+                self.change_speed(1)
+                self.advance_if_able(board, recur=recur - 1)
+                self.change_speed(speed)
+
+        return not collision
+
     def update(self, board: Board) -> None:
         if self._add_direction == (0, 0):
             # don't have to move... if you can't lol
             return
 
-        self.advance()
-        r = self.mask.get_rect()
-        r.x, r.y = 0, 0
-        if board.collides_with_wall(self.mask, self.pos, is_ghost=self._is_ghost):
-            self.advance(reverse=True)
-            self.change_direction("none")  # can no longer move
+        self.advance_if_able(board)
 
 
 class AIEntity(Entity):
@@ -76,16 +140,38 @@ class AIEntity(Entity):
 class PacMan(Entity):
     def __init__(self, spawn_location: Point) -> None:
         c = global_config()
+        self.inc = 0
         super().__init__(spawn_location[0], spawn_location[1], c.pacman_speed, c.board.pacman_path)
         self.queued_direction: Direction = "none"
+
+    @property
+    def surface(self):
+        incr_every = global_config().incr_pacman_speed
+        if self.inc % incr_every < incr_every / 2:
+            return fetch_surface(global_config().board.pacman_path)
+
+        s = fetch_surface(global_config().board.pacman_open_path)
+        return pg.transform.rotate(s, _ROT_MAP[self.direction])
 
     def change(self, direction: Direction) -> None:
         self.queued_direction = direction
 
     def update(self, board: Board) -> None:
+        has_moved = False
         if self.queued_direction != "none":
+            direction = self.direction
             self.change_direction(self.queued_direction)
-        super().update(board)
-
+            moved = self.advance_if_able(board)
+            if not moved:
+                self.change_direction(direction)
+                self.advance_if_able(board)
+            else:
+                self.direction = self.queued_direction
+                self.queued_direction = "none"
+                has_moved = True
+        else:
+            has_moved = self.advance_if_able(board)
+        if has_moved:
+            self.inc += 1
 
 

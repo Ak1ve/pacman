@@ -21,6 +21,8 @@ Mode: TypeAlias = Literal["chase", "scatter"]
 class BoardData:
     ghost_spawn_locations: list[Point]
     pacman_spawn_locations: list[Point]
+    scatter_points: list[Point]
+    points_points: list[Point]
     pacman_mask: pg.mask.Mask
     ghost_mask: pg.mask.Mask
     boundary: list[list[bool]]  # setup [y][x]
@@ -33,11 +35,11 @@ class BoardData:
                                    ] * (surface.get_height() // grid_size)  # setup [y][x]
 
         boundary = [[False] * surface.get_width()] * surface.get_height()
+        points = []
 
         board = global_config().board
         pacman_mask = pg.Surface(surface.get_size(), flags=pg.SRCALPHA)
         ghost_mask = pg.Surface(surface.get_size(), flags=pg.SRCALPHA)
-
         pacman_mask.fill((0, 0, 0, 0))
         ghost_mask.fill((0, 0, 0, 0))
 
@@ -59,16 +61,39 @@ class BoardData:
                     pacman_mask.set_at((x, y), color)
                     ghost_mask.set_at((x, y), color)
                     boundary[y][x] = True
-
                 elif color == board.pacman_wall_color:
                     pacman_mask.set_at((x, y), color)
+
+        pac_mask = pg.mask.from_surface(pacman_mask, 1)
+        ghost_mask = pg.mask.from_surface(ghost_mask, 1)
+
+        for y in range(len(grid)):
+            for x in range(len(grid[0])):
+                realx, realy = x * grid_size, y * grid_size
+                surf = fetch_surface(global_config().board.point_path)
+                w, h = surf.get_size()
+                w -= 1
+                h -= 1
+                if all(realx+w < surface.get_width() and
+                       realy+h < surface.get_height() and surface.get_at((posx, posy)) == (0, 0, 0, 0) for posx, posy in (
+                        (realx, realy),
+                        (realx+w, realy),
+                        (realx+w, realy+h),
+                        (realx, realy+h)
+                )):
+                    points.append((realx, realy))
+                    pg.draw.rect(surface, (1, 1, 1, 1), (realx, realy, w, h))
+                elif x < 10:
+                    pass
 
         return cls(
             ghost_spawn_locations=_color_map[board.ghost_spawn_color],
             pacman_spawn_locations=_color_map[board.pacman_spawn_color],
-            pacman_mask=pg.mask.from_surface(pacman_mask),
-            ghost_mask=pg.mask.from_surface(ghost_mask),
+            pacman_mask=pac_mask,
+            ghost_mask=ghost_mask,
             boundary=boundary,
+            points_points=points,
+            scatter_points=_color_map[board.scatter_color],
             _grid=grid
         )
 
@@ -83,6 +108,9 @@ class BoardConfig:
     board_path: str = "board.png"
     information_path: str = "information.png"
     pacman_path: str = "pacman.png"
+    pacman_open_path: str = "pacman_open.png"
+    scatter_path: str = "scatter.png"
+    point_path: str = "points.png"
 
 
 @dataclass(slots=True)
@@ -93,6 +121,7 @@ class Config:
     window_name: str
     board: BoardConfig
     grid_size: int
+    incr_pacman_speed: int = 30
 
     @property
     def board_surface(self) -> pg.Surface:

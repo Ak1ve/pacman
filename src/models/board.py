@@ -6,7 +6,7 @@ import pygame as pg
 
 from src.models.assets import fetch_surface
 from src.models.config import *
-from src.models.entity import PacMan
+from src.models.entity import PacMan, SimpleSprite
 
 
 """@dataclasses.dataclass()
@@ -42,6 +42,9 @@ class Board:
         self.surface = global_config().board_surface.copy()
         self.data = BoardData.from_surface(fetch_surface(global_config().board.information_path))
 
+        self.scatters: list[SimpleSprite] = [SimpleSprite.scatter_at(pos) for pos in self.data.scatter_points]
+        self.points = [SimpleSprite.point_at(x) for x in self.data.points_points]
+        self.mode: Mode = "chase"
         self.pacman = PacMan(random.choice(self.data.pacman_spawn_locations))
 
     def collides_with_wall(self, mask: pg.mask.Mask, position: Point, is_ghost: bool = False) -> bool:
@@ -55,15 +58,41 @@ class Board:
 
     def get_surface(self) -> pg.Surface:
         s = self.surface.copy()  # TODO ghosts
-        # s.blit(fetch_surface("information.png"), (0, 0))
+
+        for x in self.scatters:
+            s.blit(x.surface, x.pos)
+
+        for x in self.points:
+            s.blit(x.surface, x.pos)
+
         s.blit(self.pacman.surface, self.pacman.pos)
-        """if self.overlap is not None:
-            pg.draw.circle(s, (255, 255, 0), self.overlap, 10)"""
         return s
+
+    def collides_with_list(self, l: list[SimpleSprite]) -> bool:
+        pops = []
+        has = False
+        for i, x in enumerate(l):
+            if x.collides_with(self.pacman):
+                pops.append(i)
+                has = True
+        for x in pops[::-1]:
+            l.pop(x)
+        return has
+
+    def collides_with_scatter(self) -> bool:
+        # collide for scatter
+        return self.collides_with_list(self.scatters)
+
+    def collides_with_point(self) -> bool:
+        return self.collides_with_list(self.points)
 
     def update(self) -> None:
         # TODO ghosts
         self.pacman.update(self)
+        if self.collides_with_scatter():
+            self.mode = "scatter"
+        if self.collides_with_point():
+            pass
 
     def on_event(self, event: pg.event.Event) -> None:
         if event.type != pg.KEYDOWN:
@@ -72,4 +101,4 @@ class Board:
         direction: Direction = {pg.K_s: "down", pg.K_w: "up", pg.K_a: "left", pg.K_d: "right"}.get(event.key, "none")
 
         if direction != "none":
-            self.pacman.change_direction(direction)
+            self.pacman.change(direction)
