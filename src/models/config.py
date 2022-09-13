@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from typing import TypeAlias, Optional, Literal
 
 import pygame as pg
-from tcod.path import AStar
 import numpy as np
 
 from src.models.assets import fetch_surface
+from src.models.pathfind import Grid
 
 __all__ = ("Point", "Config", "set_global_config", "global_config", "Color", "BoardData", "BoardConfig", "Direction",
            "Mode")
@@ -28,7 +28,7 @@ class BoardData:
     points_points: list[Point]
     pacman_mask: pg.mask.Mask
     ghost_mask: pg.mask.Mask
-    boundary: AStar
+    boundary: Grid
 
     @classmethod
     def from_surface(cls, surface: pg.Surface) -> BoardData:
@@ -57,22 +57,17 @@ class BoardData:
                 # is an increment of grid_size:
                 if y % grid_size == 0 == x % grid_size:
                     grid[y // grid_size][x // grid_size] = color
+                if not (y % grid_size == 0 or x % grid_size == 0):
+                    boundary[y][x] = -1
+
                 if color in _color_map.keys():
                     _color_map[color].append((x, y))
                 elif color == board.wall_color:
                     pacman_mask.set_at((x, y), color)
                     ghost_mask.set_at((x, y), color)
-                    boundary[y][x] = 0
+                    boundary[y][x] = False
                 elif color == board.pacman_wall_color:
                     pacman_mask.set_at((x, y), color)
-
-        for y in range(len(boundary)):
-            for x in range(len(boundary[0])):
-                touches_wall = any(0 <= y + dy < len(boundary) and 0 <= x + dx < len(boundary[0]) and boundary[y + dy][x + dx] == 0 for dx in range(-1, 2) for dy in range(-1, 2))
-                if touches_wall:
-                    continue
-                boundary[y][x] = -1
-
 
         pac_mask = pg.mask.from_surface(pacman_mask, 1)
         ghost_mask = pg.mask.from_surface(ghost_mask, 1)
@@ -101,7 +96,7 @@ class BoardData:
             pacman_spawn_locations=_color_map[board.pacman_spawn_color],
             pacman_mask=pac_mask,
             ghost_mask=ghost_mask,
-            boundary=AStar(np.array(boundary), diagonal=0),
+            boundary=Grid(boundary, grid_size),
             points_points=points,
             scatter_points=_color_map[board.scatter_color],
         )

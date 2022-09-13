@@ -2,6 +2,7 @@ import dataclasses
 import random
 from typing import TypeAlias, Literal, Optional
 
+import numpy as np
 import pygame as pg
 
 from src.models.assets import fetch_surface
@@ -71,6 +72,7 @@ class Board:
         for x in self.points:
             s.blit(x.surface, x.pos)
 
+        pg.draw.lines(s, (255, 255, 0), False, )
         s.blit(self.pacman.surface, self.pacman.pos)
         return s
 

@@ -5,12 +5,11 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 import pygame as pg
-from tcod.path import AStar
-import numpy as np
 
 if TYPE_CHECKING:
     from src.models.board import Board
 
+from src.models.pathfind import Grid
 from src.models.assets import fetch_surface
 from src.models.config import *
 
@@ -126,8 +125,8 @@ class Entity:
         self.advance_if_able(board)
 
 
-def path_find(path: AStar, start: Point, end: Point) -> list[Point]:
-    p = path.get_path(*start, *end)
+def path_find(path: Grid, start: Point, end: Point) -> list[Point]:
+    p = path.get_path(start, end)
     return p
 
 
@@ -145,6 +144,7 @@ class AIEntity(Entity):
         self.moves: list[Point] = []
 
     def path_find_to(self, board: Board, point: Point) -> None:
+        # Jump Point Search
         self.thread = get_pool().apply_async(path_find, (board.data.boundary, self.pos, point))
 
     def move_to(self, point: Point):
