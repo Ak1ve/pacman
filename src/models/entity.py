@@ -1,13 +1,12 @@
 from __future__ import annotations
-
 import functools
-import math
-import random
-from typing import TYPE_CHECKING, TypeAlias, Literal
-from dataclasses import dataclass
+from multiprocessing.pool import ThreadPool, ApplyResult
+import time
+from typing import TYPE_CHECKING, Optional
 
 import pygame as pg
-
+from tcod.path import AStar
+import numpy as np
 
 if TYPE_CHECKING:
     from src.models.board import Board
@@ -127,14 +126,58 @@ class Entity:
         self.advance_if_able(board)
 
 
+def path_find(path: AStar, start: Point, end: Point) -> list[Point]:
+    p = path.get_path(*start, *end)
+    return p
+
+
+def get_pool() -> ThreadPool:
+    if hasattr(get_pool, "_pool"):
+        return get_pool._pool
+    get_pool._pool = ThreadPool(processes=global_config().pool_processes)
+    return get_pool._pool
+
+
 class AIEntity(Entity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, is_ghost=True, **kwargs)
+        self.thread: Optional[ApplyResult] = None
         self.moves: list[Point] = []
 
-    def path_find_to(self, board: Board, point: Point, *, moves: list[Point] = None) -> None:
-        if moves is None:
-            moves = []
+    def path_find_to(self, board: Board, point: Point) -> None:
+        self.thread = get_pool().apply_async(path_find, (board.data.boundary, self.pos, point))
+
+    def move_to(self, point: Point):
+        x, y = point
+        if x > self.x:
+            self.change_direction("right")
+        elif x < self.x:
+            self.change_direction("left")
+        elif y > self.y:
+            self.change_direction("down")
+        elif y < self.y:
+            self.change_direction("up")
+        else:
+            self.change_direction("none")
+
+    def update(self, board: Board) -> None:
+        # polling the thread to check if complete
+        super().update(board)
+        if self.thread is not None and self.thread.ready():
+            self.moves = self.thread.get()
+            print(self.moves)
+            self.thread = None
+        if self.thread is not None and not self.thread.ready():
+            self.change_direction("none")
+            self.moves = []  # don't do anything if it's waiting
+        if len(self.moves):
+            self.move_to(self.moves.pop(0))
+
+
+class Ghost(AIEntity):
+    def __init__(self, pos: Point, surface: str = "pacman.png"):
+        # TODO not do pacman but instead a global config
+        super().__init__(*pos, global_config().ghost_speed, surface)
 
 
 class PacMan(Entity):

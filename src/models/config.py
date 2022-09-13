@@ -1,8 +1,11 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TypeAlias, Optional, Literal
+
 import pygame as pg
+from tcod.path import AStar
+import numpy as np
+
 from src.models.assets import fetch_surface
 
 __all__ = ("Point", "Config", "set_global_config", "global_config", "Color", "BoardData", "BoardConfig", "Direction",
@@ -25,8 +28,7 @@ class BoardData:
     points_points: list[Point]
     pacman_mask: pg.mask.Mask
     ghost_mask: pg.mask.Mask
-    boundary: list[list[bool]]  # setup [y][x]
-    _grid: list[list[Color]]  # setup [y][x]
+    boundary: AStar
 
     @classmethod
     def from_surface(cls, surface: pg.Surface) -> BoardData:
@@ -34,7 +36,7 @@ class BoardData:
         grid: list[list[Color]] = [[(-1, -1, -1)] * (surface.get_width() // grid_size)
                                    ] * (surface.get_height() // grid_size)  # setup [y][x]
 
-        boundary = [[False] * surface.get_width()] * surface.get_height()
+        boundary = [[1 for _ in range(surface.get_width())] for __ in range(surface.get_height())]
         points = []
 
         board = global_config().board
@@ -60,9 +62,17 @@ class BoardData:
                 elif color == board.wall_color:
                     pacman_mask.set_at((x, y), color)
                     ghost_mask.set_at((x, y), color)
-                    boundary[y][x] = True
+                    boundary[y][x] = 0
                 elif color == board.pacman_wall_color:
                     pacman_mask.set_at((x, y), color)
+
+        for y in range(len(boundary)):
+            for x in range(len(boundary[0])):
+                touches_wall = any(0 <= y + dy < len(boundary) and 0 <= x + dx < len(boundary[0]) and boundary[y + dy][x + dx] == 0 for dx in range(-1, 2) for dy in range(-1, 2))
+                if touches_wall:
+                    continue
+                boundary[y][x] = -1
+
 
         pac_mask = pg.mask.from_surface(pacman_mask, 1)
         ghost_mask = pg.mask.from_surface(ghost_mask, 1)
@@ -91,10 +101,9 @@ class BoardData:
             pacman_spawn_locations=_color_map[board.pacman_spawn_color],
             pacman_mask=pac_mask,
             ghost_mask=ghost_mask,
-            boundary=boundary,
+            boundary=AStar(np.array(boundary), diagonal=0),
             points_points=points,
             scatter_points=_color_map[board.scatter_color],
-            _grid=grid
         )
 
 
@@ -121,7 +130,9 @@ class Config:
     window_name: str
     board: BoardConfig
     grid_size: int
+    pool_processes: int
     incr_pacman_speed: int = 30
+    scatter_duration: int = 60*20*10  # 10 seconds
 
     @property
     def board_surface(self) -> pg.Surface:

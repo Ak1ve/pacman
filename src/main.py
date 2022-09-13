@@ -15,7 +15,8 @@ def main():
             scatter_color=(255, 0, 255),
             pacman_wall_color=(0, 0, 255)
         ),
-        grid_size=10
+        grid_size=10,
+        pool_processes=5
     )
     set_global_config(c)
     window = Window()

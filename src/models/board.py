@@ -6,8 +6,7 @@ import pygame as pg
 
 from src.models.assets import fetch_surface
 from src.models.config import *
-from src.models.entity import PacMan, SimpleSprite
-
+from src.models.entity import PacMan, SimpleSprite, AIEntity, Ghost
 
 """@dataclasses.dataclass()
 class _Cell:  # this is for an optimization for collision which is probably really dumb... but idc
@@ -46,6 +45,10 @@ class Board:
         self.points = [SimpleSprite.point_at(x) for x in self.data.points_points]
         self.mode: Mode = "chase"
         self.pacman = PacMan(random.choice(self.data.pacman_spawn_locations))
+        self.time_since_chase = pg.time.get_ticks()
+
+        self.ghosts: list[Ghost] = [Ghost(random.choice(self.data.ghost_spawn_locations))]
+        self.ghosts[0].path_find_to(self, self.pacman.pos)
 
     def collides_with_wall(self, mask: pg.mask.Mask, position: Point, is_ghost: bool = False) -> bool:
         rect = mask.get_rect().copy()
@@ -58,6 +61,9 @@ class Board:
 
     def get_surface(self) -> pg.Surface:
         s = self.surface.copy()  # TODO ghosts
+
+        for x in self.ghosts:
+            s.blit(x.surface, x.pos)
 
         for x in self.scatters:
             s.blit(x.surface, x.pos)
@@ -91,8 +97,17 @@ class Board:
         self.pacman.update(self)
         if self.collides_with_scatter():
             self.mode = "scatter"
+            self.time_since_chase = pg.time.get_ticks()
+            print("START")
         if self.collides_with_point():
             pass
+        if self.time_since_chase + global_config().scatter_duration < pg.time.get_ticks() and self.mode=="scatter":
+            self.mode = "chase"
+            print(self.time_since_chase, pg.time.get_ticks())
+            print("END")
+
+        for ghost in self.ghosts:
+            ghost.update(self)
 
     def on_event(self, event: pg.event.Event) -> None:
         if event.type != pg.KEYDOWN:
