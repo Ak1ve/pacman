@@ -171,7 +171,8 @@ class AIEntity(Entity):
             self.change_direction("none")
             self.moves = []  # don't do anything if it's waiting
         if len(self.moves):
-            self.move_to(self.moves.pop(0))
+            pass
+            # self.move_to(self.moves.pop(0))
 
 
 class Ghost(AIEntity):

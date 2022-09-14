@@ -72,7 +72,8 @@ class Board:
         for x in self.points:
             s.blit(x.surface, x.pos)
 
-        pg.draw.lines(s, (255, 255, 0), False, )
+        if len(g := self.ghosts[0].moves):
+            pg.draw.lines(s, (255, 255, 0), False, g)
         s.blit(self.pacman.surface, self.pacman.pos)
         return s
 
