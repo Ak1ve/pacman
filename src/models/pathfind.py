@@ -4,7 +4,6 @@ import heapq
 import math
 from enum import Enum
 from typing import TypeAlias, TYPE_CHECKING
-import sys
 
 import numpy as np
 
@@ -14,8 +13,6 @@ if TYPE_CHECKING:
 import src.models.config as config
 
 Matrix: TypeAlias = list[list[int]]  # False == wall
-
-sys.setrecursionlimit(10000000)
 
 
 @dataclasses.dataclass()
