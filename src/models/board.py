@@ -1,13 +1,15 @@
 import dataclasses
+import functools
 import random
 from typing import TypeAlias, Literal, Optional
 
-import numpy as np
 import pygame as pg
 
+from src.models import pathfind
 from src.models.assets import fetch_surface
 from src.models.config import *
 from src.models.entity import PacMan, SimpleSprite, AIEntity, Ghost
+from src.models.goals import *
 
 """@dataclasses.dataclass()
 class _Cell:  # this is for an optimization for collision which is probably really dumb... but idc
@@ -48,8 +50,7 @@ class Board:
         self.pacman = PacMan(random.choice(self.data.pacman_spawn_locations))
         self.time_since_chase = pg.time.get_ticks()
 
-        self.ghosts: list[Ghost] = [Ghost(random.choice(self.data.ghost_spawn_locations))]
-        self.ghosts[0].path_find_to(self, self.pacman.pos)
+        self.ghosts: list[Ghost] = Ghost.ghosts_from_data(self.data)
 
     def collides_with_wall(self, mask: pg.mask.Mask, position: Point, is_ghost: bool = False) -> bool:
         rect = mask.get_rect().copy()
@@ -60,11 +61,27 @@ class Board:
         p_mask = self.data.ghost_mask if is_ghost else self.data.pacman_mask
         return p_mask.overlap(mask, offset=position)
 
+    @staticmethod
+    @functools.cache
+    def grid() -> pg.Surface:
+        w, h = global_config().screen_dimensions
+        s = pg.Surface((w, h), flags=pg.SRCALPHA)
+        grid = global_config().grid_size
+        for x in range(0, w, grid):
+            pg.draw.line(s, (15, 155, 0, 255), (x, 0), (x, h))
+            pg.draw.line(s, (15, 155, 0, 255), (0, x), (w, x))
+        s.set_alpha(80)
+        return s
+
     def get_surface(self) -> pg.Surface:
-        s = self.surface.copy()  # TODO ghosts
+        s = self.surface.copy().convert_alpha()
+        perc_scatter_done = (pg.time.get_ticks() - self.time_since_chase) / global_config().scatter_duration
 
         for x in self.ghosts:
-            s.blit(x.surface, x.pos)
+            if self.mode == "chase" or (r := int(perc_scatter_done * 100)) % 2 == 0 and r >= 80:
+                s.blit(x.surface, x.pos)
+            else:
+                s.blit(pg.transform.rotate(x.surface, 90), x.pos)
 
         for x in self.scatters:
             s.blit(x.surface, x.pos)
@@ -72,8 +89,14 @@ class Board:
         for x in self.points:
             s.blit(x.surface, x.pos)
 
-        if len(g := self.ghosts[0].moves):
-            pg.draw.lines(s, (255, 255, 0), False, g)
+        if debug().draw_ghost_path:
+            for g in self.ghosts:
+                if len(g.moves) >= 2:
+                    pg.draw.lines(s, (255, 255, 0), False, g.moves)
+
+        if debug().show_grid:
+            s.blit(self.grid(), (0, 0))
+
         s.blit(self.pacman.surface, self.pacman.pos)
         return s
 
@@ -98,19 +121,32 @@ class Board:
     def update(self) -> None:
         # TODO ghosts
         self.pacman.update(self)
+        start_chase = False
+        start_scatter = False
         if self.collides_with_scatter():
+            start_scatter = self.mode == "chase"
             self.mode = "scatter"
             self.time_since_chase = pg.time.get_ticks()
-            print("START")
         if self.collides_with_point():
             pass
-        if self.time_since_chase + global_config().scatter_duration < pg.time.get_ticks() and self.mode=="scatter":
+        if self.time_since_chase + global_config().scatter_duration < pg.time.get_ticks() and self.mode == "scatter":
+            start_chase = self.mode == "scatter"
             self.mode = "chase"
-            print(self.time_since_chase, pg.time.get_ticks())
-            print("END")
 
         for ghost in self.ghosts:
             ghost.update(self)
+            collides = ghost.rect.colliderect(self.pacman.rect)
+            if collides and self.mode == "scatter":
+                ghost.replace()
+                continue
+            elif collides:
+                pg.event.post(pg.event.Event(pg.QUIT))
+
+            can_path = ghost.can_pathfind()
+            if can_path and self.mode == "scatter" or start_scatter:
+                ghost.scatter_pathfind(self)
+            elif can_path or start_chase:
+                ghost.chase_pathfind(self)
 
     def on_event(self, event: pg.event.Event) -> None:
         if event.type != pg.KEYDOWN:

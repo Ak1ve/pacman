@@ -1,7 +1,7 @@
 from __future__ import annotations
 import functools
+import random
 from multiprocessing.pool import ThreadPool, ApplyResult
-import time
 from typing import TYPE_CHECKING, Optional
 
 import pygame as pg
@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from src.models.pathfind import Grid
 from src.models.assets import fetch_surface
 from src.models.config import *
+from src.models.goals import *
 
 _DIR_MAP: dict[Direction, Point] = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0), "none": (0, 0)}
 _ROT_MAP: dict[Direction, int] = {"up": 90, "down": -90, "left": 180, "right": 0, "none": 0}
@@ -67,6 +68,13 @@ class Entity:
         self._is_ghost = is_ghost
         self.direction: Direction = "none"
         self.mask = pg.mask.from_surface(self.surface, 1)
+        self.has_moved = False
+        self.queued_direction: Direction = "none"
+        self.stopped_since = -1
+
+    @property
+    def rect(self) -> pg.Rect:
+        return pg.Rect(self.x, self.y, self.surface.get_width(), self.surface.get_height())
 
     @property
     def surface(self):
@@ -117,91 +125,11 @@ class Entity:
 
         return not collision
 
-    def update(self, board: Board) -> None:
-        if self._add_direction == (0, 0):
-            # don't have to move... if you can't lol
-            return
-
-        self.advance_if_able(board)
-
-
-def path_find(path: Grid, start: Point, end: Point) -> list[Point]:
-    p = path.get_path(start, end)
-    return p
-
-
-def get_pool() -> ThreadPool:
-    if hasattr(get_pool, "_pool"):
-        return get_pool._pool
-    get_pool._pool = ThreadPool(processes=global_config().pool_processes)
-    return get_pool._pool
-
-
-class AIEntity(Entity):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, is_ghost=True, **kwargs)
-        self.thread: Optional[ApplyResult] = None
-        self.moves: list[Point] = []
-
-    def path_find_to(self, board: Board, point: Point) -> None:
-        # Jump Point Search
-        self.thread = get_pool().apply_async(path_find, (board.data.boundary, self.pos, point))
-
-    def move_to(self, point: Point):
-        x, y = point
-        if x > self.x:
-            self.change_direction("right")
-        elif x < self.x:
-            self.change_direction("left")
-        elif y > self.y:
-            self.change_direction("down")
-        elif y < self.y:
-            self.change_direction("up")
-        else:
-            self.change_direction("none")
-
-    def update(self, board: Board) -> None:
-        # polling the thread to check if complete
-        super().update(board)
-        if self.thread is not None and self.thread.ready():
-            self.moves = self.thread.get()
-            print(self.moves)
-            self.thread = None
-        if self.thread is not None and not self.thread.ready():
-            self.change_direction("none")
-            self.moves = []  # don't do anything if it's waiting
-        if len(self.moves):
-            pass
-            # self.move_to(self.moves.pop(0))
-
-
-class Ghost(AIEntity):
-    def __init__(self, pos: Point, surface: str = "pacman.png"):
-        # TODO not do pacman but instead a global config
-        super().__init__(*pos, global_config().ghost_speed, surface)
-
-
-class PacMan(Entity):
-    def __init__(self, spawn_location: Point) -> None:
-        c = global_config()
-        self.inc = 0
-        super().__init__(spawn_location[0], spawn_location[1], c.pacman_speed, c.board.pacman_path)
-        self.queued_direction: Direction = "none"
-
-    @property
-    def surface(self):
-        incr_every = global_config().incr_pacman_speed
-        if self.inc % incr_every < incr_every / 2:
-            return fetch_surface(global_config().board.pacman_path)
-
-        s = fetch_surface(global_config().board.pacman_open_path)
-        return pg.transform.rotate(s, _ROT_MAP[self.direction])
-
     def change(self, direction: Direction) -> None:
         self.queued_direction = direction
 
     def update(self, board: Board) -> None:
-        has_moved = False
+        self.has_moved = False
         if self.queued_direction != "none":
             direction = self.direction
             self.change_direction(self.queued_direction)
@@ -212,10 +140,136 @@ class PacMan(Entity):
             else:
                 self.direction = self.queued_direction
                 self.queued_direction = "none"
-                has_moved = True
+                self.has_moved = True
         else:
-            has_moved = self.advance_if_able(board)
-        if has_moved:
+            self.has_moved = self.advance_if_able(board)
+        if self.has_moved:
+            self.stopped_since = -1
+        elif self.stopped_since == -1:
+            self.stopped_since = pg.time.get_ticks()
+
+
+def path_find(path: Grid, start: Point, end: Point) -> list[Point]:
+    p = path.get_path(start, end)
+    return p
+
+
+def within(a: Point, b: Point, delta: float | int) -> bool:
+    if a is None or b is None:
+        return False
+    x1, y1 = a
+    x2, y2 = b
+    return abs(x2-x1) + abs(y2-y1) <= delta
+
+
+def get_pool() -> ThreadPool:
+    if hasattr(get_pool, "__pool__"):
+        return get_pool.__pool__
+    get_pool.__pool__ = ThreadPool(global_config().pool_processes)
+    return get_pool.__pool__
+
+
+class AIEntity(Entity):
+    def __init__(self, chase_goals: list[GoalFunc], scatter_goals: list[GoalFunc], *args, **kwargs):
+        super().__init__(*args, is_ghost=True, **kwargs)
+        self.thread: Optional[ApplyResult] = None
+        self.moves: list[Point] = []
+        self._current_destination: Optional[Point] = None
+        self.chase_goals = chase_goals
+        self.scatter_goals = scatter_goals
+        self._aggression_length = 0
+
+    def path_find_to(self, board: Board, point: Point) -> None:
+        self.thread = get_pool().apply_async(path_find, (board.data.boundary, self.pos, point))
+        self.change("none")
+        self.moves = []
+
+    def can_pathfind(self) -> bool:
+        aggression = global_config().ghost_aggression
+        return not len(self.moves) and self.thread is None or len(self.moves) <= aggression < self._aggression_length and self.thread is None
+
+    def scatter_pathfind(self, board: Board) -> None:
+        algorithm = random.choice(self.scatter_goals)
+        self.path_find_to(board, algorithm(board))
+
+    def chase_pathfind(self, board: Board) -> None:
+        algorithm = random.choice(self.chase_goals)
+        self.path_find_to(board, algorithm(board))
+
+    def move_to(self, point: Point):
+        x, y = point
+
+        if self.x == x and self.y == y:
+            if len(self.moves):
+                self._advance_goal()
+        else:
+            lst = [self.y - y, y - self.y, self.x - x, x - self.x]  # up down left righ
+            mx = max(lst)
+            if lst.count(mx) >= 2 and len(self.moves) >= 3:
+                self.move_to(self.moves[random.randint(1, 2)])
+                return
+            direction = ["up", "down", "left", "right"][lst.index(mx)]
+            self.change(direction)  # NOQA
+
+    def _advance_goal(self) -> None:
+        if len(self.moves):
+            self._current_destination = self.moves.pop(0)
+            self.move_to(self._current_destination)
+
+    def update(self, board: Board) -> None:
+        last_pos = self.pos
+        super().update(board)
+        # polling the thread to check if complete
+        if self.thread is not None and self.thread.ready():
+            self.moves = self.thread.get()
+            self.thread = None
+            self._aggression_length = len(self.moves)
+
+        if len(self.moves) and self._current_destination is None:
+            self._current_destination = self.pos
+
+        if within(self.pos, self._current_destination, global_config().grid_size):
+            self._advance_goal()
+        elif not within(self.pos, self._current_destination, global_config().re_pathfind_distance):
+            self._advance_goal()
+        if last_pos == self.pos and self.thread is None:
+            self._advance_goal()
+
+
+class Ghost(AIEntity):
+    def __init__(self, chase_goals: list[GoalFunc], scatter_goals: list[GoalFunc], pos: Point,
+                 surface: str):
+        super().__init__(chase_goals, scatter_goals, *pos, global_config().ghost_speed, surface)
+        self.start_pos = pos
+
+    @classmethod
+    def ghosts_from_data(cls, data: BoardData) -> list[Ghost]:
+        c = global_config()
+        random.shuffle(data.ghost_spawn_locations)
+        return [Ghost(goals.chase, goals.scatter, spawn, ghost_path) for ghost_path, goals, spawn
+                in zip(c.board.ghosts(), c.ghost_goals, data.ghost_spawn_locations)]
+
+    def replace(self) -> None:
+        self.pos = self.start_pos
+
+class PacMan(Entity):
+    def __init__(self, spawn_location: Point) -> None:
+        c = global_config()
+        self.inc = 0
+        super().__init__(spawn_location[0], spawn_location[1], c.pacman_speed, c.board.pacman_path)
+
+    @property
+    def surface(self):
+        incr_every = global_config().incr_pacman_speed
+        if self.inc % incr_every < incr_every / 2:
+            return fetch_surface(global_config().board.pacman_path)
+
+        s = fetch_surface(global_config().board.pacman_open_path)
+        return pg.transform.rotate(s, _ROT_MAP[self.direction])
+
+    def update(self, board: Board) -> None:
+        super().update(board)
+        if self.has_moved:
             self.inc += 1
 
 

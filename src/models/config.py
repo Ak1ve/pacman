@@ -1,15 +1,21 @@
 from __future__ import annotations
+
+import glob
 from dataclasses import dataclass
-from typing import TypeAlias, Optional, Literal
+from pathlib import Path
+from typing import TypeAlias, Optional, Literal, TYPE_CHECKING
 
 import pygame as pg
-import numpy as np
 
-from src.models.assets import fetch_surface
+
+from src.models.assets import fetch_surface, __path__
 from src.models.pathfind import Grid
 
+if TYPE_CHECKING:
+    from src.models.goals import *
+
 __all__ = ("Point", "Config", "set_global_config", "global_config", "Color", "BoardData", "BoardConfig", "Direction",
-           "Mode")
+           "Mode", "Debug", "debug", "Goals")
 
 Point: TypeAlias = tuple[int | float, int | float]
 
@@ -68,6 +74,8 @@ class BoardData:
                     boundary[y][x] = False
                 elif color == board.pacman_wall_color:
                     pacman_mask.set_at((x, y), color)
+                elif color == (200, 0, 0, 255):
+                    boundary[y][x] = False
 
         pac_mask = pg.mask.from_surface(pacman_mask, 1)
         ghost_mask = pg.mask.from_surface(ghost_mask, 1)
@@ -88,8 +96,6 @@ class BoardData:
                 )):
                     points.append((realx, realy))
                     pg.draw.rect(surface, (1, 1, 1, 1), (realx, realy, w, h))
-                elif x < 10:
-                    pass
 
         return cls(
             ghost_spawn_locations=_color_map[board.ghost_spawn_color],
@@ -100,6 +106,12 @@ class BoardData:
             points_points=points,
             scatter_points=_color_map[board.scatter_color],
         )
+
+
+@dataclass(slots=True)
+class Goals:
+    scatter: list[GoalFunc]
+    chase: list[GoalFunc]
 
 
 @dataclass(slots=True)
@@ -115,19 +127,33 @@ class BoardConfig:
     pacman_open_path: str = "pacman_open.png"
     scatter_path: str = "scatter.png"
     point_path: str = "points.png"
+    ghost_root: str = "ghosts"
+
+    def ghosts(self) -> list[str]:
+        return list(str(x) for x in (__path__ / self.ghost_root).glob("*"))
+
+
+@dataclass(slots=True)
+class Debug:
+    draw_ghost_path: bool = False
+    show_grid: bool = False
 
 
 @dataclass(slots=True)
 class Config:
     screen_dimensions: tuple[int, int]
     ghost_speed: float
+    ghost_goals: list[Goals]
+    ghost_aggression: float
     pacman_speed: float
     window_name: str
     board: BoardConfig
     grid_size: int
+    re_pathfind_distance: int
     pool_processes: int
     incr_pacman_speed: int = 30
     scatter_duration: int = 60*20*10  # 10 seconds
+    debug: Debug = Debug()
 
     @property
     def board_surface(self) -> pg.Surface:
@@ -146,3 +172,7 @@ def global_config() -> Config:
     if __global_config__ is None:
         raise ValueError("Global config not set")
     return __global_config__
+
+
+def debug() -> Debug:
+    return global_config().debug

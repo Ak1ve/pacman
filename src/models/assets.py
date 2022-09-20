@@ -10,4 +10,6 @@ __path__ = (Path(__file__).parent.parent.parent / "assets").absolute()
 
 @cache
 def fetch_surface(path: str | bytes) -> pg.Surface:
-    return pg.image.load(str(__path__ / path)).convert_alpha()
+    p = (__path__ / path)
+    p = str(p) if p.exists() else path
+    return pg.image.load(p).convert_alpha()
