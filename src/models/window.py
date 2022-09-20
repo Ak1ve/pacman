@@ -28,6 +28,3 @@ class Window:
         self.display.fill((255, 255, 255))
         self.display.blit(self.board.get_surface(), (0, 0))
         pg.display.flip()
-
-
-

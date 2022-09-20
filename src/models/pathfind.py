@@ -1,13 +1,10 @@
 from __future__ import annotations
 import dataclasses
-import functools
 import heapq
 import math
-from collections import defaultdict
 from enum import Enum
-from typing import TypeAlias, TYPE_CHECKING, Callable
+from typing import TypeAlias, TYPE_CHECKING
 import sys
-from queue import PriorityQueue
 
 import numpy as np
 
@@ -63,7 +60,8 @@ class SortingPath(Enum):
         if self == SortingPath.FARTHEST:
             return -h
 
-    def distance(self, a: Point, b: Point) -> float:
+    @staticmethod
+    def distance(a: Point, b: Point) -> float:
         return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
 
 

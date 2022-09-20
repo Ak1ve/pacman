@@ -1,4 +1,3 @@
-import src.models.config
 from src.models.window import Window
 from src.models.config import *
 from src.models.goals import *

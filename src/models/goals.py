@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from typing import TYPE_CHECKING, Callable, TypeAlias
-from random import randint, choice
+from random import randint
 
 if TYPE_CHECKING:
     from src.models.board import Board
@@ -28,7 +28,7 @@ def to_pacman(board: Board) -> Point:
 
 
 def to_point(point: Point) -> GoalFunc:
-    def i(board: Board) -> Point:
+    def i(board: Board) -> Point:  # NOQA
         return point
     return i
 

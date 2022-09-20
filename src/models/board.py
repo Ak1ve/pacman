@@ -1,15 +1,11 @@
-import dataclasses
 import functools
 import random
-from typing import TypeAlias, Literal, Optional
 
 import pygame as pg
 
-from src.models import pathfind
 from src.models.assets import fetch_surface
 from src.models.config import *
-from src.models.entity import PacMan, SimpleSprite, AIEntity, Ghost
-from src.models.goals import *
+from src.models.entity import PacMan, SimpleSprite, Ghost
 
 """@dataclasses.dataclass()
 class _Cell:  # this is for an optimization for collision which is probably really dumb... but idc
@@ -100,15 +96,15 @@ class Board:
         s.blit(self.pacman.surface, self.pacman.pos)
         return s
 
-    def collides_with_list(self, l: list[SimpleSprite]) -> bool:
+    def collides_with_list(self, lst: list[SimpleSprite]) -> bool:
         pops = []
         has = False
-        for i, x in enumerate(l):
+        for i, x in enumerate(lst):
             if x.collides_with(self.pacman):
                 pops.append(i)
                 has = True
         for x in pops[::-1]:
-            l.pop(x)
+            lst.pop(x)
         return has
 
     def collides_with_scatter(self) -> bool:
@@ -119,7 +115,6 @@ class Board:
         return self.collides_with_list(self.points)
 
     def update(self) -> None:
-        # TODO ghosts
         self.pacman.update(self)
         start_chase = False
         start_scatter = False

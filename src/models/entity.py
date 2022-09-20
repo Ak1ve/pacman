@@ -115,7 +115,8 @@ class Entity:
         self.advance()
         r = self.mask.get_rect()
         r.x, r.y = 0, 0
-        if collision := board.collides_with_wall(self.mask, (round(self.pos[0]), round(self.pos[1])), is_ghost=self._is_ghost):
+        if collision := board.collides_with_wall(self.mask, (round(self.pos[0]), round(self.pos[1])),
+                                                 is_ghost=self._is_ghost):
             self.advance(reverse=True)
             if recur:
                 speed = self.speed
@@ -159,7 +160,7 @@ def within(a: Point, b: Point, delta: float | int) -> bool:
         return False
     x1, y1 = a
     x2, y2 = b
-    return abs(x2-x1) + abs(y2-y1) <= delta
+    return abs(x2 - x1) + abs(y2 - y1) <= delta
 
 
 def get_pool() -> ThreadPool:
@@ -186,7 +187,8 @@ class AIEntity(Entity):
 
     def can_pathfind(self) -> bool:
         aggression = global_config().ghost_aggression
-        return not len(self.moves) and self.thread is None or len(self.moves) <= aggression < self._aggression_length and self.thread is None
+        length = len(self.moves) <= aggression < self._aggression_length
+        return not len(self.moves) and self.thread is None or length and self.thread is None
 
     def scatter_pathfind(self, board: Board) -> None:
         algorithm = random.choice(self.scatter_goals)
@@ -203,7 +205,7 @@ class AIEntity(Entity):
             if len(self.moves):
                 self._advance_goal()
         else:
-            lst = [self.y - y, y - self.y, self.x - x, x - self.x]  # up down left righ
+            lst = [self.y - y, y - self.y, self.x - x, x - self.x]  # up down left right
             mx = max(lst)
             if lst.count(mx) >= 2 and len(self.moves) >= 3:
                 self.move_to(self.moves[random.randint(1, 2)])
@@ -252,6 +254,7 @@ class Ghost(AIEntity):
     def replace(self) -> None:
         self.pos = self.start_pos
 
+
 class PacMan(Entity):
     def __init__(self, spawn_location: Point) -> None:
         c = global_config()
@@ -271,5 +274,3 @@ class PacMan(Entity):
         super().update(board)
         if self.has_moved:
             self.inc += 1
-
-

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import glob
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TypeAlias, Optional, Literal, TYPE_CHECKING
 
 import pygame as pg
@@ -88,7 +86,8 @@ class BoardData:
                 w -= 1
                 h -= 1
                 if all(realx+w < surface.get_width() and
-                       realy+h < surface.get_height() and surface.get_at((posx, posy)) == (0, 0, 0, 0) for posx, posy in (
+                       realy+h < surface.get_height() and surface.get_at((posx, posy)) == (0, 0, 0, 0)
+                       for posx, posy in (
                         (realx, realy),
                         (realx+w, realy),
                         (realx+w, realy+h),
