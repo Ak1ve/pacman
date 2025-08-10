@@ -21,7 +21,7 @@ def main():
         re_pathfind_distance=30,
         pool_processes=15,
         debug=Debug(
-            draw_ghost_path=False,
+            draw_ghost_path=True,
             show_grid=False
         ),
         ghost_goals=[
